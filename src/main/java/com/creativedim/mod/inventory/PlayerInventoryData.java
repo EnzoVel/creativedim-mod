@@ -1,7 +1,12 @@
 package com.creativedim.mod.inventory;
 
 import com.creativedim.mod.CreativeDimMod;
+import com.mojang.serialization.Codec;
+import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.level.Level;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.attachment.AttachmentType;
 import net.neoforged.neoforge.registries.DeferredRegister;
@@ -9,76 +14,83 @@ import net.neoforged.neoforge.registries.NeoForgeRegistries;
 
 import java.util.function.Supplier;
 
-/**
- * Stores two saved inventories per player:
- *  - "normal" inventory  → Overworld / Nether / End
- *  - "creative_dim"      → our custom creative dimension
- *
- * Uses NeoForge AttachmentType for automatic per-player persistent storage.
- */
 public class PlayerInventoryData {
 
     public static final DeferredRegister<AttachmentType<?>> ATTACHMENT_TYPES =
             DeferredRegister.create(NeoForgeRegistries.ATTACHMENT_TYPES, CreativeDimMod.MOD_ID);
 
-    @SuppressWarnings("unchecked")
+    public static final Codec<PlayerInventoryData> CODEC = RecordCodecBuilder.create(instance ->
+            instance.group(
+                    CompoundTag.CODEC.optionalFieldOf("NormalInventory", new CompoundTag())
+                            .forGetter(d -> d.normalInventory.serializeNBT()),
+                    CompoundTag.CODEC.optionalFieldOf("CreativeDimInventory", new CompoundTag())
+                            .forGetter(d -> d.creativeDimInventory.serializeNBT()),
+                    Codec.BOOL.optionalFieldOf("NormalSaved", false)
+                            .forGetter(d -> d.normalInventorySaved),
+                    CompoundTag.CODEC.optionalFieldOf("ReturnPosition", new CompoundTag())
+                            .forGetter(d -> d.returnPosition),
+                    CompoundTag.CODEC.optionalFieldOf("NormalCosmeticArmour", new CompoundTag())
+                            .forGetter(d -> d.normalCosmeticArmour),
+                    CompoundTag.CODEC.optionalFieldOf("CreativeCosmeticArmour", new CompoundTag())
+                            .forGetter(d -> d.creativeCosmeticArmour)
+            ).apply(instance, PlayerInventoryData::fromCodec)
+    );
+
+    private static PlayerInventoryData fromCodec(
+            CompoundTag normalTag, CompoundTag creativeTag, boolean normalSaved,
+            CompoundTag returnPos, CompoundTag normalCosmetic, CompoundTag creativeCosmetic) {
+        PlayerInventoryData data = new PlayerInventoryData();
+        data.normalInventory.deserializeNBT(normalTag);
+        data.creativeDimInventory.deserializeNBT(creativeTag);
+        data.normalInventorySaved   = normalSaved;
+        data.returnPosition         = returnPos;
+        data.normalCosmeticArmour   = normalCosmetic;
+        data.creativeCosmeticArmour = creativeCosmetic;
+        return data;
+    }
+
     public static final Supplier<AttachmentType<PlayerInventoryData>> PLAYER_INVENTORY_DATA =
             ATTACHMENT_TYPES.register("inventory_data", () ->
-                    AttachmentType.<PlayerInventoryData>builder(PlayerInventoryData::new)
-                            .serialize(
-                                    data -> data.serializeNBT(),
-                                    (tag) -> {
-                                        PlayerInventoryData d = new PlayerInventoryData();
-                                        d.deserializeNBT(tag);
-                                        return d;
-                                    }
-                            )
-                            .copyOnDeath()   // keep data through death (game mode stays managed)
+                    AttachmentType.builder(PlayerInventoryData::new)
+                            .serialize(CODEC)
+                            .copyOnDeath()
                             .build()
             );
 
-    // ── Stored state ──────────────────────────────────────────────────────────
-
-    private final SavedInventory normalInventory     = new SavedInventory();
+    private final SavedInventory normalInventory      = new SavedInventory();
     private final SavedInventory creativeDimInventory = new SavedInventory();
-
-    /** Whether the player's normal inventory has been saved at least once. */
     private boolean normalInventorySaved = false;
+    private CompoundTag returnPosition         = new CompoundTag();
+    private CompoundTag normalCosmeticArmour   = new CompoundTag();
+    private CompoundTag creativeCosmeticArmour = new CompoundTag();
 
     public PlayerInventoryData() {}
 
-    // ── Accessors ─────────────────────────────────────────────────────────────
-
     public SavedInventory getNormalInventory()      { return normalInventory; }
     public SavedInventory getCreativeDimInventory() { return creativeDimInventory; }
+    public boolean isNormalInventorySaved()         { return normalInventorySaved; }
+    public void markNormalInventorySaved()          { this.normalInventorySaved = true; }
 
-    public boolean isNormalInventorySaved() { return normalInventorySaved; }
-    public void markNormalInventorySaved()  { this.normalInventorySaved = true; }
+    public boolean hasReturnPosition() { return !returnPosition.isEmpty(); }
+    public CompoundTag getReturnPosition() { return returnPosition; }
+    public void clearReturnPosition()  { this.returnPosition = new CompoundTag(); }
 
-    // ── Serialization ─────────────────────────────────────────────────────────
-
-    public CompoundTag serializeNBT() {
-        CompoundTag tag = new CompoundTag();
-        tag.put("NormalInventory",     normalInventory.serializeNBT());
-        tag.put("CreativeDimInventory", creativeDimInventory.serializeNBT());
-        tag.putBoolean("NormalSaved",  normalInventorySaved);
-        return tag;
+    public void saveReturnPosition(ServerPlayer player) {
+        returnPosition = new CompoundTag();
+        returnPosition.putString("Dimension", player.level().dimension().location().toString());
+        returnPosition.putDouble("X", player.getX());
+        returnPosition.putDouble("Y", player.getY());
+        returnPosition.putDouble("Z", player.getZ());
+        returnPosition.putFloat("Yaw",   player.getYRot());
+        returnPosition.putFloat("Pitch", player.getXRot());
     }
 
-    public void deserializeNBT(CompoundTag tag) {
-        if (tag.contains("NormalInventory")) {
-            normalInventory.deserializeNBT(tag.getCompound("NormalInventory"));
-        }
-        if (tag.contains("CreativeDimInventory")) {
-            creativeDimInventory.deserializeNBT(tag.getCompound("CreativeDimInventory"));
-        }
-        normalInventorySaved = tag.getBoolean("NormalSaved");
-    }
-
-    // ── Registration ──────────────────────────────────────────────────────────
+    public CompoundTag getNormalCosmeticArmour()           { return normalCosmeticArmour; }
+    public void setNormalCosmeticArmour(CompoundTag tag)   { this.normalCosmeticArmour = tag.copy(); }
+    public CompoundTag getCreativeCosmeticArmour()         { return creativeCosmeticArmour; }
+    public void setCreativeCosmeticArmour(CompoundTag tag) { this.creativeCosmeticArmour = tag.copy(); }
 
     public static void register(IEventBus modEventBus) {
         ATTACHMENT_TYPES.register(modEventBus);
     }
 }
-
