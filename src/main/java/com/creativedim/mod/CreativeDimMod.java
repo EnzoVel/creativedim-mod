@@ -4,7 +4,6 @@ import com.creativedim.mod.dimension.ModDimensions;
 import com.creativedim.mod.event.DimensionEventHandler;
 import com.creativedim.mod.inventory.InventoryManager;
 import com.creativedim.mod.inventory.PlayerInventoryData;
-import com.creativedim.mod.item.ModItems;
 import com.creativedim.mod.network.ModNetwork;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.Mod;
@@ -22,7 +21,6 @@ public class CreativeDimMod {
         LOGGER.info("Creative Dimension mod initializing...");
 
         ModDimensions.register(modEventBus);
-        ModItems.register(modEventBus);
         PlayerInventoryData.register(modEventBus);
 
         modEventBus.addListener(this::commonSetup);
