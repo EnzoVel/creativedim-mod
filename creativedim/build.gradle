@@ -1,0 +1,54 @@
+plugins {
+    id 'java'
+    id 'net.neoforged.gradle.userdev' version '7.0.171'
+}
+
+version = '1.0.0'
+group = 'com.creativedim'
+
+base {
+    archivesName = 'creativedim'
+}
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(21)
+}
+
+runs {
+    configureEach {
+        systemProperty 'forge.logging.markers', 'REGISTRIES'
+        systemProperty 'forge.logging.console.level', 'debug'
+        modSource project.sourceSets.main
+    }
+
+    client {
+        systemProperty 'forge.enabledGameTestNamespaces', 'creativedim'
+    }
+
+    server {
+        systemProperty 'forge.enabledGameTestNamespaces', 'creativedim'
+        programArgument '--nogui'
+    }
+}
+
+dependencies {
+    implementation "net.neoforged:neoforge:21.1.221"
+}
+
+tasks.withType(ProcessResources).configureEach {
+    var replaceProperties = [
+            minecraft_version      : "1.21.1",
+            minecraft_version_range: "[1.21.1,1.22)",
+            neo_version            : "21.1.221",
+            neo_version_range      : "[21.1.221,)",
+            loader_version_range   : "[4,)",
+            mod_id                 : "creativedim",
+            mod_version            : version,
+            mod_name               : "Creative Dimension",
+            mod_description        : "A creative superflat dimension with separate inventory",
+    ]
+    inputs.properties replaceProperties
+    filesMatching(['META-INF/neoforge.mods.toml']) {
+        expand replaceProperties
+    }
+}
