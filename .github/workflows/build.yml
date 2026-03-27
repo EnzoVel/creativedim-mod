@@ -16,15 +16,18 @@ jobs:
         with:
           gradle-version: '8.8'
 
-      - name: Debug - voir la structure des fichiers
-        run: find . -name "*.gradle" -o -name "*.toml" | head -30
+      - name: Debug - structure du repo
+        run: |
+          echo "=== Racine ==="
+          ls -la
+          echo "=== Recherche settings.gradle ==="
+          find . -name "settings.gradle" 2>/dev/null
 
       - name: Build
         run: gradle build
-        working-directory: creativedim
 
       - name: Upload JAR
         uses: actions/upload-artifact@v4
         with:
           name: creativedim-1.0.0
-          path: creativedim/build/libs/creativedim-1.0.0.jar
+          path: "**/build/libs/creativedim-1.0.0.jar"
