@@ -33,6 +33,9 @@ runs {
 
 dependencies {
     implementation "net.neoforged:neoforge:21.1.221"
+    
+    // Dépendance optionnelle CosmeticArmorReworked
+    compileOnly files('libs/cosmeticarmorreworked-1.21.1-v1-neoforge.jar')
 }
 
 tasks.withType(ProcessResources).configureEach {
