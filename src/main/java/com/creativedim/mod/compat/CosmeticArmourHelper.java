@@ -79,16 +79,14 @@ public class CosmeticArmourHelper {
      * Force CosmeticArmorReworked à recharger les données depuis le fichier
      * en invalidant son cache interne.
      */
-    private static void reloadInventory(ServerPlayer player) {
-        try {
-            lain.mods.cos.impl.ModObjects.manager.getCosArmorInventory(player.getUUID());
-            // Invalider le cache pour forcer un rechargement depuis le fichier
-            lain.mods.cos.impl.ModObjects.manager.CommonCache.invalidate(player.getUUID());
-            lain.mods.cos.impl.ModObjects.manager.getCosArmorInventory(player.getUUID());
-        } catch (Exception e) {
-            CreativeDimMod.LOGGER.warn("[CreativeDim] Erreur reload CosmeticArmor: {}", e.getMessage());
-        }
+private static void reloadInventory(ServerPlayer player) {
+    try {
+        lain.mods.cos.api.CosArmorAPI.getManager()
+                .getCosArmorInventory(player.getUUID());
+    } catch (Exception e) {
+        CreativeDimMod.LOGGER.warn("[CreativeDim] Erreur reload CosmeticArmor: {}", e.getMessage());
     }
+}
 
     // ── Chemins des fichiers ──────────────────────────────────────────────────
 
