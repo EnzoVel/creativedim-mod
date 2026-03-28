@@ -13,7 +13,6 @@ import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.InteractionResult;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.levelgen.Heightmap;
@@ -151,7 +150,7 @@ public class DimensionEventHandler {
         if (!blockState.is(Blocks.ENDER_CHEST)) return;
 
         event.setCanceled(true);
-        event.setUseBlock(InteractionResult.FAIL);
+        event.setUseBlock(net.neoforged.neoforge.common.util.TriState.FALSE);
 
         player.sendSystemMessage(Component.literal(
             "§c[Dimension Créative] §fLes Ender Chests sont désactivés dans cette dimension."
