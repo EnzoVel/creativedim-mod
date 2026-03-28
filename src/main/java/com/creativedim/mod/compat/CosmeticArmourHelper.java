@@ -1,10 +1,24 @@
 package com.creativedim.mod.compat;
 
 import com.creativedim.mod.CreativeDimMod;
-import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.fml.ModList;
 
+import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
+import java.util.UUID;
+
+/**
+ * Isole les données de CosmeticArmorReworked entre la dimension créative
+ * et les dimensions normales.
+ *
+ * CosmeticArmorReworked stocke ses données dans des fichiers séparés :
+ *   world/playerdata/<uuid>.cosarmor
+ *
+ * On sauvegarde/restaure ces fichiers lors des transitions de dimension,
+ * de la même façon que notre propre système d'inventaire.
+ */
 public class CosmeticArmourHelper {
 
     private static Boolean modPresent = null;
@@ -19,42 +33,93 @@ public class CosmeticArmourHelper {
     }
 
     /**
-     * Capture l'inventaire cosmétique du joueur via l'API publique du mod.
+     * Sauvegarde le fichier .cosarmor actuel vers un fichier de backup
+     * (.cosarmor_normal ou .cosarmor_creative selon la destination).
      */
-    public static CompoundTag capture(ServerPlayer player) {
-        if (!isModPresent()) return new CompoundTag();
-        try {
-            lain.mods.cos.api.inventory.CAStacksBase inv = lain.mods.cos.api.CosArmorAPI
-                    .getManager()
-                    .getCosArmorInventory(player.getUUID());
+    public static void saveForNormal(ServerPlayer player) {
+        if (!isModPresent()) return;
+        copyFile(getCosArmorFile(player), getNormalBackup(player));
+    }
 
-            return inv.serializeNBT(player.server.registryAccess());
-        } catch (Exception e) {
-            CreativeDimMod.LOGGER.warn("[CreativeDim] Erreur capture CosmeticArmor: {}", e.getMessage());
-            return new CompoundTag();
-        }
+    public static void saveForCreative(ServerPlayer player) {
+        if (!isModPresent()) return;
+        copyFile(getCosArmorFile(player), getCreativeBackup(player));
     }
 
     /**
-     * Restaure l'inventaire cosmétique du joueur via l'API publique du mod.
+     * Restaure le fichier .cosarmor depuis le backup normal ou créatif.
+     * Force ensuite CosmeticArmorReworked à recharger les données
+     * en invalidant son cache interne via son InventoryManager.
      */
-    public static void restore(ServerPlayer player, CompoundTag saved) {
+    public static void restoreForNormal(ServerPlayer player) {
         if (!isModPresent()) return;
-        try {
-            lain.mods.cos.api.inventory.CAStacksBase inv = lain.mods.cos.api.CosArmorAPI
-                    .getManager()
-                    .getCosArmorInventory(player.getUUID());
+        File backup = getNormalBackup(player);
+        if (backup.exists()) {
+            copyFile(backup, getCosArmorFile(player));
+        } else {
+            // Première fois : pas de backup normal → vider le fichier actuel
+            getCosArmorFile(player).delete();
+        }
+        reloadInventory(player);
+    }
 
-            if (saved.isEmpty()) {
-                // Vider tous les slots cosmétiques
-                for (int i = 0; i < inv.getSlots(); i++) {
-                    inv.setStackInSlot(i, net.minecraft.world.item.ItemStack.EMPTY);
-                }
-            } else {
-                inv.deserializeNBT(player.server.registryAccess(), saved);
+    public static void restoreForCreative(ServerPlayer player) {
+        if (!isModPresent()) return;
+        File backup = getCreativeBackup(player);
+        if (backup.exists()) {
+            copyFile(backup, getCosArmorFile(player));
+        } else {
+            // Première visite dans la dim créative → pas de cosmétiques
+            getCosArmorFile(player).delete();
+        }
+        reloadInventory(player);
+    }
+
+    /**
+     * Force CosmeticArmorReworked à recharger les données depuis le fichier
+     * en invalidant son cache interne.
+     */
+    private static void reloadInventory(ServerPlayer player) {
+        try {
+            lain.mods.cos.impl.ModObjects.manager.getCosArmorInventory(player.getUUID());
+            // Invalider le cache pour forcer un rechargement depuis le fichier
+            lain.mods.cos.impl.ModObjects.manager.CommonCache.invalidate(player.getUUID());
+            lain.mods.cos.impl.ModObjects.manager.getCosArmorInventory(player.getUUID());
+        } catch (Exception e) {
+            CreativeDimMod.LOGGER.warn("[CreativeDim] Erreur reload CosmeticArmor: {}", e.getMessage());
+        }
+    }
+
+    // ── Chemins des fichiers ──────────────────────────────────────────────────
+
+    private static File getCosArmorFile(ServerPlayer player) {
+        return getPlayerDataFile(player, ".cosarmor");
+    }
+
+    private static File getNormalBackup(ServerPlayer player) {
+        return getPlayerDataFile(player, ".cosarmor_normal");
+    }
+
+    private static File getCreativeBackup(ServerPlayer player) {
+        return getPlayerDataFile(player, ".cosarmor_creative");
+    }
+
+    private static File getPlayerDataFile(ServerPlayer player, String extension) {
+        UUID uuid = player.getUUID();
+        return player.getServer()
+                .getWorldPath(net.minecraft.world.level.storage.LevelResource.PLAYER_DATA_DIR)
+                .resolve(uuid + extension)
+                .toFile();
+    }
+
+    private static void copyFile(File src, File dst) {
+        try {
+            if (src.exists()) {
+                Files.copy(src.toPath(), dst.toPath(), StandardCopyOption.REPLACE_EXISTING);
             }
         } catch (Exception e) {
-            CreativeDimMod.LOGGER.warn("[CreativeDim] Erreur restore CosmeticArmor: {}", e.getMessage());
+            CreativeDimMod.LOGGER.warn("[CreativeDim] Erreur copie fichier cosarmor {} → {}: {}",
+                src.getName(), dst.getName(), e.getMessage());
         }
     }
 }
