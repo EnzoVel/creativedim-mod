@@ -1,107 +1,119 @@
-package com.creativedim.mod.inventory;
+package com.creativedim.mod.compat;
 
 import com.creativedim.mod.CreativeDimMod;
-import com.creativedim.mod.compat.CosmeticArmourHelper;
-import com.creativedim.mod.dimension.ModDimensions;
-import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.level.GameType;
-import net.minecraft.world.level.Level;
-import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.neoforge.event.entity.EntityTravelToDimensionEvent;
-import net.neoforged.neoforge.event.entity.player.PlayerEvent;
+import net.minecraft.world.level.storage.LevelResource;
+import net.neoforged.fml.ModList;
 
-public class InventoryManager {
+import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
+import java.util.UUID;
 
-    @SubscribeEvent
-    public void onTravelToDimension(EntityTravelToDimensionEvent event) {
-        if (!(event.getEntity() instanceof ServerPlayer player)) return;
-        if (player.level().isClientSide()) return;
+/**
+ * Isole les données de CosmeticArmorReworked entre la dimension créative
+ * et les dimensions normales.
+ *
+ * CosmeticArmorReworked stocke ses données dans des fichiers séparés :
+ *   world/playerdata/<uuid>.cosarmor
+ *
+ * On sauvegarde/restaure ces fichiers lors des transitions de dimension.
+ */
+public class CosmeticArmourHelper {
 
-        ResourceKey<Level> from = player.level().dimension();
-        ResourceKey<Level> to   = event.getDimension();
+    private static Boolean modPresent = null;
 
-        boolean leavingCreative  = ModDimensions.CREATIVE_DIM_KEY.equals(from);
-        boolean enteringCreative = ModDimensions.CREATIVE_DIM_KEY.equals(to);
+    public static boolean isModPresent() {
+        if (modPresent == null) {
+            modPresent = ModList.get().isLoaded("cosmeticarmorreworked");
+            CreativeDimMod.LOGGER.info("[CreativeDim] CosmeticArmorReworked {}détecté.",
+                modPresent ? "" : "non ");
+        }
+        return modPresent;
+    }
 
-        if (!leavingCreative && !enteringCreative) return;
+    /** Sauvegarde le .cosarmor actuel comme backup "normal" (avant d'entrer en dim créative). */
+    public static void saveForNormal(ServerPlayer player) {
+        if (!isModPresent()) return;
+        copyFile(getCosArmorFile(player), getNormalBackup(player));
+        CreativeDimMod.LOGGER.debug("[CreativeDim] CosArmor sauvegardé (normal) pour {}", player.getName().getString());
+    }
 
-        PlayerInventoryData data = player.getData(PlayerInventoryData.PLAYER_INVENTORY_DATA);
+    /** Sauvegarde le .cosarmor actuel comme backup "créatif" (avant de quitter la dim créative). */
+    public static void saveForCreative(ServerPlayer player) {
+        if (!isModPresent()) return;
+        copyFile(getCosArmorFile(player), getCreativeBackup(player));
+        CreativeDimMod.LOGGER.debug("[CreativeDim] CosArmor sauvegardé (créatif) pour {}", player.getName().getString());
+    }
 
-        if (enteringCreative) {
-            data.getNormalInventory().captureFromPlayer(player);
-            data.markNormalInventorySaved();
-            data.setNormalCosmeticArmour(CosmeticArmourHelper.capture(player));
-            CreativeDimMod.LOGGER.debug("[CreativeDim] Saved normal inventory + cosmetics for {}", player.getName().getString());
+    /** Restaure le backup "normal" dans le .cosarmor actif (en quittant la dim créative). */
+    public static void restoreForNormal(ServerPlayer player) {
+        if (!isModPresent()) return;
+        File backup = getNormalBackup(player);
+        if (backup.exists()) {
+            copyFile(backup, getCosArmorFile(player));
         } else {
-            data.getCreativeDimInventory().captureFromPlayer(player);
-            data.setCreativeCosmeticArmour(CosmeticArmourHelper.capture(player));
-            CreativeDimMod.LOGGER.debug("[CreativeDim] Saved creative inventory + cosmetics for {}", player.getName().getString());
+            getCosArmorFile(player).delete();
+        }
+        reloadInventory(player);
+        CreativeDimMod.LOGGER.debug("[CreativeDim] CosArmor restauré (normal) pour {}", player.getName().getString());
+    }
+
+    /** Restaure le backup "créatif" dans le .cosarmor actif (en entrant dans la dim créative). */
+    public static void restoreForCreative(ServerPlayer player) {
+        if (!isModPresent()) return;
+        File backup = getCreativeBackup(player);
+        if (backup.exists()) {
+            copyFile(backup, getCosArmorFile(player));
+        } else {
+            getCosArmorFile(player).delete();
+        }
+        reloadInventory(player);
+        CreativeDimMod.LOGGER.debug("[CreativeDim] CosArmor restauré (créatif) pour {}", player.getName().getString());
+    }
+
+    /**
+     * Force CosmeticArmorReworked à recharger les données depuis le fichier
+     * en invalidant son cache interne.
+     */
+    private static void reloadInventory(ServerPlayer player) {
+        try {
+            lain.mods.cos.impl.ModObjects.manager.CommonCache.invalidate(player.getUUID());
+            lain.mods.cos.impl.ModObjects.manager.getCosArmorInventory(player.getUUID());
+        } catch (Exception e) {
+            CreativeDimMod.LOGGER.warn("[CreativeDim] Erreur reload CosmeticArmor: {}", e.getMessage());
         }
     }
 
-    @SubscribeEvent
-    public void onChangedDimension(PlayerEvent.PlayerChangedDimensionEvent event) {
-        if (!(event.getEntity() instanceof ServerPlayer player)) return;
+    // ── Chemins des fichiers ──────────────────────────────────────────────────
 
-        ResourceKey<Level> from = event.getFrom();
-        ResourceKey<Level> to   = event.getTo();
-
-        boolean enteredCreative = ModDimensions.CREATIVE_DIM_KEY.equals(to);
-        boolean leftCreative    = ModDimensions.CREATIVE_DIM_KEY.equals(from);
-
-        if (!enteredCreative && !leftCreative) return;
-
-        PlayerInventoryData data = player.getData(PlayerInventoryData.PLAYER_INVENTORY_DATA);
-
-        if (enteredCreative) {
-            data.getCreativeDimInventory().applyToPlayer(player);
-            CosmeticArmourHelper.restore(player, data.getCreativeCosmeticArmour());
-            player.setGameMode(GameType.CREATIVE);
-
-            player.sendSystemMessage(Component.literal(
-                "§a[Dimension Créative] §fMode créatif activé — inventaire de survie sauvegardé."
-            ));
-            CreativeDimMod.LOGGER.info("[CreativeDim] {} entered creative dim → CREATIVE", player.getName().getString());
-
-        } else {
-            data.getNormalInventory().applyToPlayer(player);
-            CosmeticArmourHelper.restore(player, data.getNormalCosmeticArmour());
-            player.setGameMode(GameType.SURVIVAL);
-
-            player.sendSystemMessage(Component.literal(
-                "§e[Dimension Créative] §fRetour en survie — inventaire restauré."
-            ));
-            CreativeDimMod.LOGGER.info("[CreativeDim] {} left creative dim → SURVIVAL", player.getName().getString());
-        }
+    private static File getCosArmorFile(ServerPlayer player) {
+        return getPlayerDataFile(player, ".cosarmor");
     }
 
-    @SubscribeEvent
-    public void onPlayerLogin(PlayerEvent.PlayerLoggedInEvent event) {
-        if (!(event.getEntity() instanceof ServerPlayer player)) return;
+    private static File getNormalBackup(ServerPlayer player) {
+        return getPlayerDataFile(player, ".cosarmor_normal");
+    }
 
-        if (ModDimensions.isCreativeDimension(player.serverLevel())) {
-            if (player.gameMode.getGameModeForPlayer() != GameType.CREATIVE) {
-                player.setGameMode(GameType.CREATIVE);
-                CreativeDimMod.LOGGER.info("[CreativeDim] {} logged in inside creative dim — forced CREATIVE", player.getName().getString());
+    private static File getCreativeBackup(ServerPlayer player) {
+        return getPlayerDataFile(player, ".cosarmor_creative");
+    }
+
+    private static File getPlayerDataFile(ServerPlayer player, String extension) {
+        return player.getServer()
+                .getWorldPath(LevelResource.PLAYER_DATA_DIR)
+                .resolve(player.getUUID() + extension)
+                .toFile();
+    }
+
+    private static void copyFile(File src, File dst) {
+        try {
+            if (src.exists()) {
+                Files.copy(src.toPath(), dst.toPath(), StandardCopyOption.REPLACE_EXISTING);
             }
+        } catch (Exception e) {
+            CreativeDimMod.LOGGER.warn("[CreativeDim] Erreur copie cosarmor {} → {}: {}",
+                src.getName(), dst.getName(), e.getMessage());
         }
-    }
-
-    @SubscribeEvent
-    public void onPlayerRespawn(PlayerEvent.PlayerRespawnEvent event) {
-        if (!(event.getEntity() instanceof ServerPlayer player)) return;
-
-        if (ModDimensions.isCreativeDimension(player.serverLevel())) {
-            player.setGameMode(GameType.CREATIVE);
-        } else if (player.gameMode.getGameModeForPlayer() == GameType.CREATIVE) {
-            player.setGameMode(GameType.SURVIVAL);
-        }
-    }
-
-    @SubscribeEvent
-    public void onPlayerClone(PlayerEvent.Clone event) {
-        CreativeDimMod.LOGGER.debug("[CreativeDim] Player clone event for {}", event.getEntity().getName().getString());
     }
 }
