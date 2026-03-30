@@ -4,9 +4,7 @@ import com.creativedim.mod.CreativeDimMod;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.level.Level;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.attachment.AttachmentType;
 import net.neoforged.neoforge.registries.DeferredRegister;
@@ -29,6 +27,8 @@ public class PlayerInventoryData {
                             .forGetter(d -> d.normalInventorySaved),
                     CompoundTag.CODEC.optionalFieldOf("ReturnPosition", new CompoundTag())
                             .forGetter(d -> d.returnPosition),
+                    CompoundTag.CODEC.optionalFieldOf("CreativeReturnPosition", new CompoundTag())
+                            .forGetter(d -> d.creativeReturnPosition),
                     CompoundTag.CODEC.optionalFieldOf("NormalCosmeticArmour", new CompoundTag())
                             .forGetter(d -> d.normalCosmeticArmour),
                     CompoundTag.CODEC.optionalFieldOf("CreativeCosmeticArmour", new CompoundTag())
@@ -38,12 +38,14 @@ public class PlayerInventoryData {
 
     private static PlayerInventoryData fromCodec(
             CompoundTag normalTag, CompoundTag creativeTag, boolean normalSaved,
-            CompoundTag returnPos, CompoundTag normalCosmetic, CompoundTag creativeCosmetic) {
+            CompoundTag returnPos, CompoundTag creativeReturnPos,
+            CompoundTag normalCosmetic, CompoundTag creativeCosmetic) {
         PlayerInventoryData data = new PlayerInventoryData();
         data.normalInventory.deserializeNBT(normalTag);
         data.creativeDimInventory.deserializeNBT(creativeTag);
         data.normalInventorySaved   = normalSaved;
         data.returnPosition         = returnPos;
+        data.creativeReturnPosition = creativeReturnPos;
         data.normalCosmeticArmour   = normalCosmetic;
         data.creativeCosmeticArmour = creativeCosmetic;
         return data;
@@ -57,23 +59,30 @@ public class PlayerInventoryData {
                             .build()
             );
 
+    // ── State ─────────────────────────────────────────────────────────────────
+
     private final SavedInventory normalInventory      = new SavedInventory();
     private final SavedInventory creativeDimInventory = new SavedInventory();
-    private boolean normalInventorySaved = false;
-    private CompoundTag returnPosition         = new CompoundTag();
-    private CompoundTag normalCosmeticArmour   = new CompoundTag();
-    private CompoundTag creativeCosmeticArmour = new CompoundTag();
+    private boolean normalInventorySaved              = false;
+    private CompoundTag returnPosition                = new CompoundTag();
+    private CompoundTag creativeReturnPosition        = new CompoundTag();
+    private CompoundTag normalCosmeticArmour          = new CompoundTag();
+    private CompoundTag creativeCosmeticArmour        = new CompoundTag();
 
     public PlayerInventoryData() {}
+
+    // ── Accessors inventaires ─────────────────────────────────────────────────
 
     public SavedInventory getNormalInventory()      { return normalInventory; }
     public SavedInventory getCreativeDimInventory() { return creativeDimInventory; }
     public boolean isNormalInventorySaved()         { return normalInventorySaved; }
     public void markNormalInventorySaved()          { this.normalInventorySaved = true; }
 
-    public boolean hasReturnPosition() { return !returnPosition.isEmpty(); }
-    public CompoundTag getReturnPosition() { return returnPosition; }
-    public void clearReturnPosition()  { this.returnPosition = new CompoundTag(); }
+    // ── Position de retour (overworld → creative) ─────────────────────────────
+
+    public boolean hasReturnPosition()             { return !returnPosition.isEmpty(); }
+    public CompoundTag getReturnPosition()         { return returnPosition; }
+    public void clearReturnPosition()              { this.returnPosition = new CompoundTag(); }
 
     public void saveReturnPosition(ServerPlayer player) {
         returnPosition = new CompoundTag();
@@ -85,10 +94,27 @@ public class PlayerInventoryData {
         returnPosition.putFloat("Pitch", player.getXRot());
     }
 
+    // ── Position de retour dans la dim créative ───────────────────────────────
+
+    public CompoundTag getCreativeReturnPosition() { return creativeReturnPosition; }
+
+    public void saveCreativeReturnPosition(ServerPlayer player) {
+        creativeReturnPosition = new CompoundTag();
+        creativeReturnPosition.putDouble("X", player.getX());
+        creativeReturnPosition.putDouble("Y", player.getY());
+        creativeReturnPosition.putDouble("Z", player.getZ());
+        creativeReturnPosition.putFloat("Yaw",   player.getYRot());
+        creativeReturnPosition.putFloat("Pitch", player.getXRot());
+    }
+
+    // ── Cosmétiques CosmeticArmours ───────────────────────────────────────────
+
     public CompoundTag getNormalCosmeticArmour()           { return normalCosmeticArmour; }
     public void setNormalCosmeticArmour(CompoundTag tag)   { this.normalCosmeticArmour = tag.copy(); }
     public CompoundTag getCreativeCosmeticArmour()         { return creativeCosmeticArmour; }
     public void setCreativeCosmeticArmour(CompoundTag tag) { this.creativeCosmeticArmour = tag.copy(); }
+
+    // ── Registration ──────────────────────────────────────────────────────────
 
     public static void register(IEventBus modEventBus) {
         ATTACHMENT_TYPES.register(modEventBus);
