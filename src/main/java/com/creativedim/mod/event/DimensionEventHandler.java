@@ -13,15 +13,23 @@ import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.monster.Monster;
+import net.minecraft.world.entity.Mob;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
+import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.neoforge.event.level.LevelEvent;
+import net.neoforged.neoforge.event.tick.LevelTickEvent;
 
 public class DimensionEventHandler {
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // COMMANDES
+    // ══════════════════════════════════════════════════════════════════════════
 
     @SubscribeEvent
     public void onRegisterCommands(RegisterCommandsEvent event) {
@@ -63,6 +71,10 @@ public class DimensionEventHandler {
         CreativeDimMod.LOGGER.info("[CreativeDim] Commandes /creativedim et /creativedim back enregistrées.");
     }
 
+    // ══════════════════════════════════════════════════════════════════════════
+    // TÉLÉPORTATION
+    // ══════════════════════════════════════════════════════════════════════════
+
     private void teleportToCreative(ServerPlayer player) {
         var server = player.getServer();
         if (server == null) return;
@@ -75,11 +87,23 @@ public class DimensionEventHandler {
             return;
         }
 
-        BlockPos dest = getSafeDestination(target);
-        player.teleportTo(target,
-            dest.getX() + 0.5, dest.getY(), dest.getZ() + 0.5,
-            player.getYRot(), player.getXRot()
-        );
+        PlayerInventoryData data = player.getData(PlayerInventoryData.PLAYER_INVENTORY_DATA);
+        CompoundTag lastPos = data.getCreativeReturnPosition();
+
+        if (!lastPos.isEmpty()) {
+            double x     = lastPos.getDouble("X");
+            double y     = lastPos.getDouble("Y");
+            double z     = lastPos.getDouble("Z");
+            float  yaw   = lastPos.getFloat("Yaw");
+            float  pitch = lastPos.getFloat("Pitch");
+            player.teleportTo(target, x, y, z, yaw, pitch);
+        } else {
+            BlockPos dest = getSafeDestination(target);
+            player.teleportTo(target,
+                dest.getX() + 0.5, dest.getY(), dest.getZ() + 0.5,
+                player.getYRot(), player.getXRot()
+            );
+        }
     }
 
     private void returnToOrigin(ServerPlayer player) {
@@ -87,6 +111,8 @@ public class DimensionEventHandler {
         if (server == null) return;
 
         PlayerInventoryData data = player.getData(PlayerInventoryData.PLAYER_INVENTORY_DATA);
+
+        data.saveCreativeReturnPosition(player);
 
         if (!data.hasReturnPosition()) {
             ServerLevel overworld = server.getLevel(Level.OVERWORLD);
@@ -141,6 +167,48 @@ public class DimensionEventHandler {
         }
     }
 
+    // ══════════════════════════════════════════════════════════════════════════
+    // MÉTÉO ET TEMPS
+    // ══════════════════════════════════════════════════════════════════════════
+
+    @SubscribeEvent
+    public void onLevelTick(LevelTickEvent.Post event) {
+        if (!(event.getLevel() instanceof ServerLevel serverLevel)) return;
+        if (!ModDimensions.isCreativeDimension(serverLevel)) return;
+
+        if (serverLevel.isRaining() || serverLevel.isThundering()) {
+            serverLevel.setWeatherParameters(
+                Integer.MAX_VALUE,
+                0,
+                false,
+                false
+            );
+        }
+
+        if (serverLevel.getDayTime() != 6000) {
+            serverLevel.setDayTime(6000);
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // MOBS HOSTILES
+    // ══════════════════════════════════════════════════════════════════════════
+
+    @SubscribeEvent
+    public void onEntityJoinLevel(EntityJoinLevelEvent event) {
+        if (!(event.getLevel() instanceof ServerLevel serverLevel)) return;
+        if (!ModDimensions.isCreativeDimension(serverLevel)) return;
+        if (!(event.getEntity() instanceof Mob mob)) return;
+
+        if (mob instanceof Monster) {
+            event.setCanceled(true);
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // ENDERCHESTS BLOQUÉES
+    // ══════════════════════════════════════════════════════════════════════════
+
     @SubscribeEvent
     public void onPlayerInteractBlock(PlayerInteractEvent.RightClickBlock event) {
         if (!(event.getEntity() instanceof ServerPlayer player)) return;
@@ -156,6 +224,10 @@ public class DimensionEventHandler {
             "§c[Dimension Créative] §fLes Ender Chests sont désactivés dans cette dimension."
         ));
     }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // ÉVÉNEMENTS NIVEAU
+    // ══════════════════════════════════════════════════════════════════════════
 
     @SubscribeEvent
     public void onLevelLoad(LevelEvent.Load event) {
