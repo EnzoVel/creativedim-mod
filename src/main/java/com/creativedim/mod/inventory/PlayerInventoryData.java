@@ -53,4 +53,80 @@ public class PlayerInventoryData {
         } catch (Exception e) {
             CreativeDimMod.LOGGER.warn("[CreativeDim] Erreur lecture inventaire créatif: {}", e.getMessage());
         }
-        data.normalInventorySaved   = nor
+        data.normalInventorySaved   = normalSaved;
+        data.returnPosition         = returnPos         != null ? returnPos         : new CompoundTag();
+        data.creativeReturnPosition = creativeReturnPos != null ? creativeReturnPos : new CompoundTag();
+        data.normalCosmeticArmour   = normalCosmetic    != null ? normalCosmetic    : new CompoundTag();
+        data.creativeCosmeticArmour = creativeCosmetic  != null ? creativeCosmetic  : new CompoundTag();
+        return data;
+    }
+
+    public static final Supplier<AttachmentType<PlayerInventoryData>> PLAYER_INVENTORY_DATA =
+            ATTACHMENT_TYPES.register("inventory_data", () ->
+                    AttachmentType.builder(PlayerInventoryData::new)
+                            .serialize(CODEC)
+                            .copyOnDeath()
+                            .build()
+            );
+
+    // ── State ─────────────────────────────────────────────────────────────────
+
+    private final SavedInventory normalInventory      = new SavedInventory();
+    private final SavedInventory creativeDimInventory = new SavedInventory();
+    private boolean normalInventorySaved              = false;
+    private CompoundTag returnPosition                = new CompoundTag();
+    private CompoundTag creativeReturnPosition        = new CompoundTag();
+    private CompoundTag normalCosmeticArmour          = new CompoundTag();
+    private CompoundTag creativeCosmeticArmour        = new CompoundTag();
+
+    public PlayerInventoryData() {}
+
+    // ── Accessors inventaires ─────────────────────────────────────────────────
+
+    public SavedInventory getNormalInventory()      { return normalInventory; }
+    public SavedInventory getCreativeDimInventory() { return creativeDimInventory; }
+    public boolean isNormalInventorySaved()         { return normalInventorySaved; }
+    public void markNormalInventorySaved()          { this.normalInventorySaved = true; }
+
+    // ── Position de retour (overworld → creative) ─────────────────────────────
+
+    public boolean hasReturnPosition()     { return !returnPosition.isEmpty(); }
+    public CompoundTag getReturnPosition() { return returnPosition; }
+    public void clearReturnPosition()      { this.returnPosition = new CompoundTag(); }
+
+    public void saveReturnPosition(ServerPlayer player) {
+        returnPosition = new CompoundTag();
+        returnPosition.putString("Dimension", player.level().dimension().location().toString());
+        returnPosition.putDouble("X", player.getX());
+        returnPosition.putDouble("Y", player.getY());
+        returnPosition.putDouble("Z", player.getZ());
+        returnPosition.putFloat("Yaw",   player.getYRot());
+        returnPosition.putFloat("Pitch", player.getXRot());
+    }
+
+    // ── Position dans la dim créative ─────────────────────────────────────────
+
+    public CompoundTag getCreativeReturnPosition() { return creativeReturnPosition; }
+
+    public void saveCreativeReturnPosition(ServerPlayer player) {
+        creativeReturnPosition = new CompoundTag();
+        creativeReturnPosition.putDouble("X", player.getX());
+        creativeReturnPosition.putDouble("Y", player.getY());
+        creativeReturnPosition.putDouble("Z", player.getZ());
+        creativeReturnPosition.putFloat("Yaw",   player.getYRot());
+        creativeReturnPosition.putFloat("Pitch", player.getXRot());
+    }
+
+    // ── Cosmétiques ───────────────────────────────────────────────────────────
+
+    public CompoundTag getNormalCosmeticArmour()           { return normalCosmeticArmour; }
+    public void setNormalCosmeticArmour(CompoundTag tag)   { this.normalCosmeticArmour = tag.copy(); }
+    public CompoundTag getCreativeCosmeticArmour()         { return creativeCosmeticArmour; }
+    public void setCreativeCosmeticArmour(CompoundTag tag) { this.creativeCosmeticArmour = tag.copy(); }
+
+    // ── Registration ──────────────────────────────────────────────────────────
+
+    public static void register(IEventBus modEventBus) {
+        ATTACHMENT_TYPES.register(modEventBus);
+    }
+}
