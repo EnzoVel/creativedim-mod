@@ -25,6 +25,8 @@ public class CreativeDimMod {
 
         modEventBus.addListener(this::commonSetup);
 
+        // Ces deux handlers doivent être sur NeoForge.EVENT_BUS
+        // pour recevoir les events du jeu (commandes, dimensions, entités...)
         NeoForge.EVENT_BUS.register(new DimensionEventHandler());
         NeoForge.EVENT_BUS.register(new InventoryManager());
     }
